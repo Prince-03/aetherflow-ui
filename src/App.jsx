@@ -13,7 +13,7 @@ const inventoryData = [
 
 // IMPORTANT: Change this string to your live Render API URL!
 // Example: 'https://aetherflow-api-abc1.onrender.com'
-const API_URL = 'https://aetherflow-api.onrender.com';
+const API_URL = 'https://YOUR-RENDER-URL-HERE.onrender.com';
 
 export default function AetherFlowDashboard() {
   const [selectedSku, setSelectedSku] = useState(null);
@@ -49,7 +49,15 @@ export default function AetherFlowDashboard() {
       
       setTimeout(() => {
         setAnalysisStep(4);
-        setResult(data.output || "Analysis completed successfully.");
+        
+        // Extract the result robustly to prevent silent failures.
+        // If the 'output' key is missing, display the raw JSON to debug what Python actually sent back!
+        let finalDisplay = data.output || data.result || data.message;
+        if (!finalDisplay) {
+            finalDisplay = "Raw Server Response: " + JSON.stringify(data, null, 2);
+        }
+        
+        setResult(finalDisplay);
         setIsAnalyzing(false);
       }, 4500);
 

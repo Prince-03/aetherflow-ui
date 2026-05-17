@@ -13,7 +13,7 @@ const inventoryData = [
 
 // IMPORTANT: Change this string to your live Render API URL!
 // Example: 'https://aetherflow-api-abc1.onrender.com'
-const API_URL = 'https://YOUR-RENDER-URL-HERE.onrender.com';
+const API_URL = 'https://aetherflow-api.onrender.com';
 
 export default function AetherFlowDashboard() {
   const [selectedSku, setSelectedSku] = useState(null);

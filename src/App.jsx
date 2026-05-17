@@ -1,98 +1,120 @@
-import React, { useState } from "react";
-import { Package, TrendingUp, AlertTriangle, CheckCircle, Activity, Cpu, RefreshCw } from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import { 
+  Package, 
+  TrendingUp, 
+  ShoppingCart, 
+  AlertTriangle, 
+  CheckCircle, 
+  Activity, 
+  Cpu,
+  ArrowRight,
+  RefreshCw,
+  Loader2
+} from 'lucide-react';
 
-// Mock database for the UI to display the SKUs available
-const inventoryData = [
-  { sku: "SKU-1001", name: "Wireless Earbuds Basic", stock: 150, reorder: 500, category: "Electronics", trend: 1.4, baseDemand: 12000, orderCost: 250, holdingCost: 5 },
-  { sku: "SKU-1002", name: "USB-C Cables (3-Pack)", stock: 850, reorder: 1000, category: "Electronics", trend: 1.0, baseDemand: 50000, orderCost: 100, holdingCost: 0.5 },
-  { sku: "SKU-2001", name: "Eco-Friendly Yoga Mat", stock: 80, reorder: 150, category: "Wellness", trend: 0.9, baseDemand: 5000, orderCost: 400, holdingCost: 2.5 },
-  { sku: "SKU-3003", name: "Stanley Quencher (Pink)", stock: 5, reorder: 100, category: "Viral/Trending", trend: 3.5, baseDemand: 8000, orderCost: 600, holdingCost: 4 },
-  { sku: "SKU-3001", name: "Vintage Graphic Tee", stock: 500, reorder: 200, category: "Apparel", trend: 0.6, baseDemand: 15000, orderCost: 150, holdingCost: 1.5 },
-  { sku: "SKU-4001", name: "Pro Cordless Drill", stock: 45, reorder: 30, category: "Hardware", trend: 1.05, baseDemand: 2000, orderCost: 800, holdingCost: 12 }
-];
-
-// IMPORTANT: Change this string to your live Render API URL!
-// Example: 'https://aetherflow-api-abc1.onrender.com'
 const API_URL = 'https://aetherflow-api.onrender.com';
 
 export default function AetherFlowDashboard() {
+  const [inventoryData, setInventoryData] = useState([]);
+  const [isLoadingInventory, setIsLoadingInventory] = useState(true);
+  const [inventoryError, setInventoryError] = useState(null);
+  
   const [selectedSku, setSelectedSku] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(0);
-  const [result, setResult] = useState(null);
-  const [apiError, setApiError] = useState(null);
+  const [results, setResults] = useState(null);
+
+  // Fetch the inventory data from the Python Backend when the dashboard loads
+  useEffect(() => {
+    const fetchInventory = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/inventory`);
+        
+        if (!response.ok) throw new Error("Failed to fetch inventory from server");
+        
+        const json = await response.json();
+        if (json.status === "success") {
+          setInventoryData(json.data);
+        } else {
+          throw new Error(json.message || "Unknown API error");
+        }
+      } catch (error) {
+        console.error("Inventory Load Error:", error);
+        setInventoryError(`Could not load inventory database. Make sure your FastAPI server is running on ${API_URL}`);
+      } finally {
+        setIsLoadingInventory(false);
+      }
+    };
+    
+    fetchInventory();
+  }, []);
 
   const runAgentAnalysis = async (sku) => {
-    setSelectedSku(sku);
     setIsAnalyzing(true);
-    setResult(null);
     setAnalysisStep(1);
-    setApiError(null);
+    setResults(null);
 
-    // Visual delays for the UI steps
-    setTimeout(() => setAnalysisStep(2), 1500);
-    setTimeout(() => setAnalysisStep(3), 3000);
-    
+    // Advance UI steps to visually simulate agent "thinking" phases while we wait for the network
+    const stepTimer = setInterval(() => {
+      setAnalysisStep((prev) => (prev < 3 ? prev + 1 : prev));
+    }, 2000);
+
     try {
       // MAKE REAL NETWORK REQUEST TO PYTHON BACKEND
       const response = await fetch(`${API_URL}/api/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku: sku.sku })
+        body: JSON.stringify({ sku })
       });
-
-      if (!response.ok) {
-        throw new Error(`API returned status: ${response.status}`);
-      }
 
       const data = await response.json();
       
-      setTimeout(() => {
-        setAnalysisStep(4);
-        
-        // Extract the result robustly to prevent silent failures.
-        // If the 'output' key is missing, display the raw JSON to debug what Python actually sent back!
-        let finalDisplay = data.output || data.result || data.message;
-        if (!finalDisplay) {
-            finalDisplay = "Raw Server Response: " + JSON.stringify(data, null, 2);
-        }
-        
-        setResult(finalDisplay);
-        setIsAnalyzing(false);
-      }, 4500);
+      // Stop the visual timer and jump to the final result step
+      clearInterval(stepTimer);
+      setAnalysisStep(4); 
 
+      // Handle the response from LangChain
+      if (data.status === 'success') {
+        setResults({
+          success: true,
+          action: data.agent_output
+        });
+      } else {
+        setResults({
+          success: false,
+          action: `Error from Agent: ${data.message}`
+        });
+      }
     } catch (error) {
-      setTimeout(() => {
-        setAnalysisStep(4);
-        setApiError(`Connection Error: Make sure your Python API is running on ${API_URL}`);
-        // Fallback simulated result for demonstration if API is offline
-        const mockDemand = sku.baseDemand * sku.trend;
-        let finalAction = "";
-        
-        if (sku.stock < sku.reorder) {
-            const eoq = Math.floor(Math.sqrt((2 * mockDemand * sku.orderCost) / sku.holdingCost));
-            finalAction = `The current stock for ${sku.sku} ("${sku.name}") is ${sku.stock} units, which is below the reorder point of ${sku.reorder} units. After analyzing social trends, a demand multiplier of ${sku.trend} was applied, and the Dynamic EOQ was calculated to be ${eoq} units. A purchase order for ${eoq} units has been successfully drafted and is pending human approval.`;
-        } else {
-            finalAction = `The current stock for ${sku.sku} ("${sku.name}") is ${sku.stock} units. This is currently above the reorder point of ${sku.reorder}. No purchase order is required at this time.`;
-        }
-        
-        setResult(`(Fallback Mode - API Offline) ${finalAction}`);
-        setIsAnalyzing(false);
-      }, 4500);
+      clearInterval(stepTimer);
+      setAnalysisStep(4);
+      setResults({
+        success: false,
+        action: `Connection Error: Make sure your FastAPI server is running on ${API_URL}. Detail: ${error.message}`
+      });
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
+  const selectedItem = inventoryData.find(item => item.sku === selectedSku);
+
   return (
-    <div className="min-h-screen bg-gray-950 text-slate-300 p-8 font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans p-6 selection:bg-blue-500/30">
       <div className="max-w-6xl mx-auto space-y-8">
         
-        <header className="text-center space-y-4">
-          <div className="inline-flex items-center justify-center p-3 bg-indigo-500/10 rounded-2xl mb-4">
-            <Cpu className="w-8 h-8 text-indigo-400" />
+        {/* Header */}
+        <header className="flex items-center justify-between border-b border-slate-800 pb-6">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-600 p-2 rounded-lg">
+              <Cpu className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white tracking-tight">AetherFlow AI</h1>
+              <p className="text-sm text-slate-400">Autonomous Supply Chain Agent</p>
+            </div>
           </div>
-          <h1 className="text-4xl font-bold text-white tracking-tight">AetherFlow AI</h1>
-          <p className="text-slate-400 text-lg">Autonomous Supply Chain Agent</p>
-          <div className="flex items-center justify-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 inline-flex px-3 py-1 rounded-full border border-emerald-400/20">
+          <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 text-sm font-medium">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -101,151 +123,154 @@ export default function AetherFlowDashboard() {
           </div>
         </header>
 
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold flex items-center gap-2 text-white">
-            <Package className="w-5 h-5 text-indigo-400" />
-            Select SKU to Analyze
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {inventoryData.map((item) => (
-              <button
-                key={item.sku}
-                onClick={() => !isAnalyzing && runAgentAnalysis(item)}
-                disabled={isAnalyzing}
-                className={`text-left p-5 rounded-xl border transition-all duration-200 group relative overflow-hidden
-                  ${selectedSku?.sku === item.sku 
-                    ? 'bg-indigo-500/10 border-indigo-500/50 ring-1 ring-indigo-500/50' 
-                    : 'bg-gray-900/50 border-gray-800 hover:border-gray-700 hover:bg-gray-800/50'}
-                  ${isAnalyzing && selectedSku?.sku !== item.sku ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <div className="text-xs font-mono text-indigo-400 mb-1">{item.sku}</div>
-                    <div className="font-medium text-slate-200 group-hover:text-white transition-colors">{item.name}</div>
-                  </div>
-                  {item.stock < item.reorder ? (
-                    <AlertTriangle className="w-5 h-5 text-amber-500" />
-                  ) : (
-                    <CheckCircle className="w-5 h-5 text-emerald-500" />
-                  )}
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-1">
-                    <div className="text-slate-500 flex items-center gap-1"><Package className="w-3 h-3"/> Stock</div>
-                    <div className="text-slate-300 font-medium">{item.stock} / {item.reorder}</div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-slate-500 flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Category</div>
-                    <div className="text-slate-300 font-medium">{item.category}</div>
-                  </div>
-                </div>
-              </button>
-            ))}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* Left Column: SKU Selection */}
+          <div className="lg:col-span-5 space-y-4">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Package className="w-5 h-5 text-blue-400" />
+              Select SKU to Analyze
+            </h2>
+            
+            {isLoadingInventory ? (
+              <div className="flex flex-col items-center justify-center py-12 border border-slate-800 rounded-xl bg-slate-900/50">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-4" />
+                <p className="text-slate-400">Syncing with ERP Database...</p>
+              </div>
+            ) : inventoryError ? (
+              <div className="p-6 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <p>{inventoryError}</p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {inventoryData.map((item) => {
+                  const isSelected = selectedSku === item.sku;
+                  const isLowStock = item.current_stock <= item.reorder_point;
+                  
+                  return (
+                    <button
+                      key={item.sku}
+                      onClick={() => {
+                        setSelectedSku(item.sku);
+                        runAgentAnalysis(item.sku);
+                      }}
+                      disabled={isAnalyzing}
+                      className={`text-left p-4 rounded-xl border transition-all duration-200 ${
+                        isSelected 
+                          ? 'bg-blue-900/20 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.15)]' 
+                          : 'bg-slate-900 border-slate-800 hover:border-slate-600'
+                      } ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="text-xs font-mono text-blue-400 mb-1 block">{item.sku}</span>
+                          <h3 className="font-medium text-slate-100">{item.name}</h3>
+                        </div>
+                        {isLowStock ? (
+                          <AlertTriangle className="w-5 h-5 text-amber-500" />
+                        ) : (
+                          <CheckCircle className="w-5 h-5 text-emerald-500" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm mt-3">
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                          <Package className="w-4 h-4" />
+                          <span className={isLowStock ? "text-amber-400 font-medium" : ""}>
+                            {item.current_stock} / {item.reorder_point}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                          <Activity className="w-4 h-4" />
+                          <span>{item.category}</span>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        </section>
 
-        {(isAnalyzing || result) && (
-          <section className="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden mt-8">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gray-800">
-              {isAnalyzing && (
-                <div className="h-full bg-indigo-500 transition-all duration-1000 ease-out" 
-                     style={{ width: `${(analysisStep / 4) * 100}%` }} />
+          {/* Right Column: Agent Workflow & Results */}
+          <div className="lg:col-span-7">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 h-full min-h-[500px] flex flex-col">
+              
+              {!selectedSku && !isAnalyzing && !results ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 space-y-4">
+                  <Cpu className="w-16 h-16 opacity-20" />
+                  <p>Select an SKU from the left to trigger the AI Agent.</p>
+                </div>
+              ) : null}
+
+              {(isAnalyzing || results) && selectedItem && (
+                <div className="space-y-8 flex-1">
+                  <h2 className="text-xl font-semibold text-white flex items-center gap-2 mb-6">
+                    <Activity className="w-5 h-5 text-blue-400" />
+                    Agent Analysis Trace
+                  </h2>
+
+                  {/* Step 1 */}
+                  <div className={`flex gap-4 transition-opacity duration-500 ${analysisStep >= 1 ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="mt-1"><Package className={`w-5 h-5 ${analysisStep === 1 && isAnalyzing ? 'text-blue-400 animate-pulse' : 'text-slate-400'}`} /></div>
+                    <div>
+                      <h4 className="font-medium text-slate-200">1. Sensing Internal Inventory</h4>
+                      {analysisStep >= 1 && (
+                        <p className="text-sm text-slate-400 mt-1">
+                          Current Stock: <span className="text-white">{selectedItem.current_stock}</span> | 
+                          Reorder Point: <span className="text-white">{selectedItem.reorder_point}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className={`flex gap-4 transition-opacity duration-500 ${analysisStep >= 2 ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="mt-1"><TrendingUp className={`w-5 h-5 ${analysisStep === 2 && isAnalyzing ? 'text-blue-400 animate-pulse' : 'text-slate-400'}`} /></div>
+                    <div>
+                      <h4 className="font-medium text-slate-200">2. Checking External Market Trends</h4>
+                      {analysisStep >= 2 && (
+                         <p className="text-sm text-slate-400 mt-1">
+                           Agent is scanning social sentiment APIs...
+                         </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className={`flex gap-4 transition-opacity duration-500 ${analysisStep >= 3 ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="mt-1"><RefreshCw className={`w-5 h-5 ${analysisStep === 3 && isAnalyzing ? 'text-blue-400 animate-spin' : 'text-slate-400'}`} /></div>
+                    <div>
+                      <h4 className="font-medium text-slate-200">3. Thinking: Dynamic EOQ</h4>
+                      {analysisStep >= 3 && (
+                        <div className="text-sm text-slate-400 mt-1 space-y-1">
+                          <p>Consulting AetherFlow LLM via LangChain...</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Step 4 / Result */}
+                  <div className={`flex gap-4 transition-opacity duration-500 ${analysisStep >= 4 ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="mt-1"><ShoppingCart className={`w-5 h-5 ${results?.success ? 'text-emerald-400' : 'text-rose-400'}`} /></div>
+                    <div className="w-full">
+                      <h4 className="font-medium text-slate-200">4. Final Action (Live from Python)</h4>
+                      {analysisStep >= 4 && results && (
+                        <div className={`mt-3 p-4 rounded-lg border ${results.success ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30'}`}>
+                          <p className={`text-sm font-medium whitespace-pre-wrap leading-relaxed ${results.success ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {results.action}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
               )}
             </div>
+          </div>
 
-            <h2 className="text-xl font-semibold flex items-center gap-2 mb-8 text-white">
-              <Activity className="w-5 h-5 text-indigo-400" />
-              Agent Analysis Trace
-            </h2>
-
-            <div className="space-y-8">
-              <div className={`transition-all duration-500 ${analysisStep >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${analysisStep > 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-500/20 text-indigo-400 animate-pulse'}`}>
-                    1
-                  </div>
-                  <h3 className="text-lg font-medium text-slate-200">Sensing Internal Inventory</h3>
-                </div>
-                <div className="ml-11 pl-4 border-l-2 border-gray-800 text-slate-400">
-                  Checking ERP system for {selectedSku?.sku}...
-                  {analysisStep > 1 && (
-                    <div className="mt-2 text-emerald-400">
-                      Current Stock: {selectedSku?.stock} | Reorder Point: {selectedSku?.reorder}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className={`transition-all duration-500 ${analysisStep >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${analysisStep > 2 ? 'bg-emerald-500/20 text-emerald-400' : analysisStep === 2 ? 'bg-indigo-500/20 text-indigo-400 animate-pulse' : 'bg-gray-800 text-gray-500'}`}>
-                    2
-                  </div>
-                  <h3 className="text-lg font-medium text-slate-200">Checking External Market Trends</h3>
-                </div>
-                <div className="ml-11 pl-4 border-l-2 border-gray-800 text-slate-400">
-                  {analysisStep === 2 ? (
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-                      Agent is scanning social sentiment APIs...
-                    </div>
-                  ) : analysisStep > 2 && (
-                    <div className="text-emerald-400 flex items-center gap-2">
-                      Trend Multiplier Identified: {selectedSku?.trend}x
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className={`transition-all duration-500 ${analysisStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${analysisStep > 3 ? 'bg-emerald-500/20 text-emerald-400' : analysisStep === 3 ? 'bg-indigo-500/20 text-indigo-400 animate-pulse' : 'bg-gray-800 text-gray-500'}`}>
-                    3
-                  </div>
-                  <h3 className="text-lg font-medium text-slate-200">Thinking: Dynamic EOQ</h3>
-                </div>
-                <div className="ml-11 pl-4 border-l-2 border-gray-800 text-slate-400">
-                  {analysisStep === 3 ? (
-                    <div className="flex items-center gap-2">
-                      <Cpu className="w-4 h-4 animate-bounce text-indigo-400" />
-                      Consulting AetherFlow LLM via LangChain...
-                    </div>
-                  ) : analysisStep > 3 && (
-                    <div className="text-emerald-400">
-                      Calculations complete. Formulating final action.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className={`transition-all duration-500 ${analysisStep >= 4 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${result ? 'bg-indigo-500/20 text-indigo-400' : 'bg-gray-800 text-gray-500'}`}>
-                    4
-                  </div>
-                  <h3 className="text-lg font-medium text-white">Final Action (Live from Python)</h3>
-                </div>
-                {apiError && (
-                  <div className="ml-11 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 mb-4 text-sm flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 shrink-0" />
-                    <p>{apiError}. Falling back to visual simulation mode.</p>
-                  </div>
-                )}
-                <div className="ml-11 p-6 bg-gray-950 border border-gray-800 rounded-xl">
-                  {result ? (
-                    <p className="text-slate-300 leading-relaxed">
-                      {result}
-                    </p>
-                  ) : (
-                    <div className="h-6 bg-gray-800/50 animate-pulse rounded w-3/4"></div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
+        </div>
       </div>
     </div>
   );
